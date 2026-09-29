@@ -24,7 +24,7 @@ This repository holds the downloads, the plugin packages and the Armoury's annou
 ## Downloads
 
 See [`downloads/`](downloads/) and the Releases page. Extract the whole ZIP to a folder you can write to
-and run `HarwellXPS-Armour.exe`.
+and run `HarwellXPS-Armoury.exe`.
 
 ## Plugins
 
