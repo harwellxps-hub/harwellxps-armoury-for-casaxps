@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Publish the Armoury's startup announcement from Airtable into this repository.
 
-Staff write messages in the Softr staff section (Airtable: HarwellXPS Database, table "Armoury
-Announcements").  This script, run by .github/workflows/announcements.yml, turns them into the
+Staff write messages in the Softr staff section (Airtable: base "HarwellXPS Armoury Announcements",
+table "Armoury Announcements").  This script, run by .github/workflows/announcements.yml, turns them into the
 files the HarwellXPS Armoury for CasaXPS reads once per launch:
 
     announcements/feed.txt          the public feed (public and, until the next build, testing editions)
@@ -51,14 +51,15 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 FOLDER = os.path.join(ROOT, 'announcements')
 IMAGES = 'images'
 
-# Airtable field ids (HarwellXPS Database appVmZxYSFzP0IAmg, Armoury Announcements tbl8AmCp54MEK35a6).
+# Airtable field ids (base "HarwellXPS Armoury Announcements" appqTYLsSpCbIGQgi, table "Armoury
+# Announcements" tblAu9Oi2YIVY7ugs; a base of its own so the token reaches nothing else).
 # Ids, not names, so a field renamed in Airtable does not break publishing.
 F = {
-    'heading': 'fldwSrT9ROszHcQHD', 'image': 'fldx3NgtJzybthhr9', 'text': 'fldwcsUzCPONOLegW',
-    'link': 'fld9AYAzpoAiYHRmR', 'button': 'fldA8Q5RU5quxX3pV', 'expires': 'fldJnyib3Me4XCkwd',
-    'audience': 'fldEogm9ZBd0aqNCG', 'status': 'fldkRZP8YLC1kbNMH', 'again': 'fldtvZHfANOR7hIIF',
-    'msgid': 'fldI4q62Z7pjS1BO6', 'note': 'fldbezpl7RkVqXCss', 'published_at': 'fldam7jsZgazAdRFM',
-    'commit': 'fldGm0sjfaExwMkr6', 'created': 'fldNYOC7TCxA8BkLO',
+    'heading': 'fld367hkmYWUV8dYO', 'image': 'fldq85PbLzCx1k8GZ', 'text': 'fld13B7RVshwMK2jz',
+    'link': 'fldzt0DOnWvs1lZH5', 'button': 'flddC7bZtDUfLSwJP', 'expires': 'fldZh174Cy6YJzlQ1',
+    'audience': 'fldq4JczgbciDnw4O', 'status': 'fldS1R1k7OQo6rbzo', 'again': 'fldeAf7QLx1pw1eYj',
+    'msgid': 'fldTq0wHGJkjqz2Ba', 'note': 'fldZRk8deMBZW1nqH', 'published_at': 'fldJGCWWm4yfFq8AX',
+    'commit': 'fldQ03Nu4otLjVCZX', 'created': 'fldz8wH2G1dhA1hfe',
 }
 PUBLIC, TEAM = 'feed.txt', 'feed-testing.txt'
 FEEDS = (PUBLIC, TEAM)
