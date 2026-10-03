@@ -1,11 +1,9 @@
 HXPS-ANNOUNCEMENT-2
-id: test-announcement-please-ignore-20261003-18ef39
-expires: 2026-10-05
-title: Test announcement (please ignore)
-image: images/test-announcement-please-ignore-20261003-18ef39.png
+id: internal-testing-20261003-b01f8a
+expires: 2026-11-03
+title: Internal Testing
+image: images/internal-testing-20261003-b01f8a.png
 link: https://www.harwellxps.uk
-button: Visit HarwellXPS
+button: Go
 
-This is a test of the HarwellXPS Armoury's startup announcements, published from Airtable by the GitHub Action.
-
-If you can read this in the Armoury, the whole chain works: Airtable, the publisher, the team feed and the popup.
+Testing the softr portal armoury and github automated popup process.
