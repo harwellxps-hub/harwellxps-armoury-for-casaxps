@@ -1,0 +1,60 @@
+# Publishes the Armoury's startup announcement from Airtable (HarwellXPS Database, "Armoury
+# Announcements", edited on the Softr staff page) into announcements/.  See
+# tools/announcements/publish.py and announcements/README.md.
+#
+# Needs, in this repository's settings:
+#   secret   AIRTABLE_TOKEN  personal access token: data.records:read + data.records:write on the
+#                            HarwellXPS Database base only
+#   variable AIRTABLE_BASE   appVmZxYSFzP0IAmg
+#   variable AIRTABLE_TABLE  tbl8AmCp54MEK35a6
+#   Actions > General > Workflow permissions: "Read and write permissions"
+name: Announcements
+
+on:
+  schedule:
+    - cron: '4,19,34,49 * * * *'      # every 15 minutes, off the busy top of the hour
+  workflow_dispatch:                  # "Run workflow" button, or the Publish-now ping
+
+permissions:
+  contents: write
+
+concurrency:
+  group: announcements
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      AIRTABLE_TOKEN: ${{ secrets.AIRTABLE_TOKEN }}
+      AIRTABLE_BASE: ${{ vars.AIRTABLE_BASE }}
+      AIRTABLE_TABLE: ${{ vars.AIRTABLE_TABLE }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test the publisher
+        run: python3 -m unittest discover -s tools/announcements -p 'test_*.py'
+
+      - name: Not set up yet
+        if: env.AIRTABLE_TOKEN == '' || env.AIRTABLE_BASE == '' || env.AIRTABLE_TABLE == ''
+        run: echo "::notice::AIRTABLE_TOKEN (secret), AIRTABLE_BASE and AIRTABLE_TABLE (variables) are not set; nothing published."
+
+      - name: Publish from Airtable
+        if: env.AIRTABLE_TOKEN != '' && env.AIRTABLE_BASE != '' && env.AIRTABLE_TABLE != ''
+        run: python3 tools/announcements/publish.py --apply
+
+      # GitHub switches a public repository's scheduled workflows off after 60 days without a
+      # commit.  An empty commit at 50 days keeps this one running.
+      - name: Keep the schedule alive
+        if: github.event_name == 'schedule'
+        run: |
+          git pull -q --ff-only origin main || true
+          age=$(( ( $(date +%s) - $(git log -1 --format=%ct) ) / 86400 ))
+          if [ "$age" -ge 50 ]; then
+            git -c user.name='HarwellXPS announcements' \
+                -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+                commit --allow-empty -q -m "Keep the announcement schedule running (no commit for $age days)"
+            git push -q origin HEAD:refs/heads/main
+          fi

@@ -35,7 +35,8 @@ HarwellXPS has approved; modified packages are refused.
 
 Once per launch the Armoury fetches [`announcements/feed.txt`](announcements/) from this repository
 over HTTPS, to show occasional HarwellXPS news (training courses, new plugins). Nothing about you or
-your computer is sent. Set `Enabled=0` under `[Announcements]` in `armour.ini` to stop it.
+your computer is sent. Tick *Don't show announcements again* in the window, or set `Enabled=0` under
+`[Announcements]` in `armour.ini`, to stop it.
 
 ## Not a Casa Software product
 
