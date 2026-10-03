@@ -185,6 +185,25 @@ class Publishing(unittest.TestCase):
         for link in bad:
             self.assertTrue(P.problems(rec('r', link=link), TODAY), link)
 
+    def test_bare_links_get_https(self):
+        self.assertEqual(P.problems(rec('r', link='www.harwellxps.uk/training'), TODAY), [])
+        self.assertTrue(P.problems(rec('r', link='harwellxps.uk.evil.com'), TODAY))
+        self.assertTrue(P.problems(rec('r', link='ftp://harwellxps.uk'), TODAY))
+        p = self.run_plan([rec('recA', link='www.harwellxps.uk', button='Take me there')])
+        m = P.parse_feed(p['files'][P.PUBLIC])
+        self.assertEqual((m['link'], m['button']), ('https://www.harwellxps.uk', 'Take me there'))
+
+    def test_published_by_hand_is_published(self):
+        p = self.run_plan([rec('recA', status='Published', audience='Team (testing edition)')])
+        u = p['updates']['recA']
+        self.assertEqual(u[F['status']], 'Published')
+        self.assertTrue(u[F['msgid']])
+        self.assertIn('marked Published by hand', u[F['note']])
+        self.assertEqual(set(p['files']), {P.TEAM})
+        # one the publisher did publish is left alone
+        p2 = self.run_plan([rec('recA', status='Published', msgid='x-1')])
+        self.assertEqual((p2['files'], p2['updates']), ({}, {}))
+
     def test_length_limits(self):
         self.assertEqual(P.problems(rec('r', heading='\U0001F600' * 70), TODAY), [])
         self.assertIn('141', P.problems(rec('r', heading='a' * 141), TODAY)[0])

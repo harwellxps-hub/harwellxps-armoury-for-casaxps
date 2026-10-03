@@ -227,6 +227,20 @@ def one_line(s) -> str:
     return re.sub(r'\s+', ' ', clean(s)).strip()
 
 
+def normal_link(s) -> str:
+    """The link as typed, with https:// added when there is no scheme (Airtable's URL field and
+    staff both write "www.harwellxps.uk/..."). Still checked against the allowed sites."""
+    s = one_line(s)
+    return 'https://' + s if s and '://' not in s else s
+
+
+def wants_publishing(rec: dict) -> bool:
+    """Status Publish; or Published by hand on a record the publisher never published (no message
+    id), which is plainly meant as Publish."""
+    st = status_of(rec)
+    return st == 'Publish' or (st == 'Published' and not one_line(rec['fields'].get(F['msgid'])))
+
+
 def slug(s: str) -> str:
     s = re.sub(r'[^a-z0-9]+', '-', s.lower()).strip('-')
     return s[:40].rstrip('-') or 'announcement'
@@ -286,7 +300,7 @@ def problems(rec: dict, today: str) -> list:
     checked once it has been downloaded)."""
     f, out = rec['fields'], []
     heading, text = one_line(f.get(F['heading'])), clean(f.get(F['text'])).strip('\n')
-    link, button = one_line(f.get(F['link'])), one_line(f.get(F['button']))
+    link, button = normal_link(f.get(F['link'])), one_line(f.get(F['button']))
     expires = one_line(f.get(F['expires']))
     if not heading:
         out.append('Add a heading.')
@@ -363,7 +377,7 @@ def plan(records: list, feeds: dict, today: str, now: dt.datetime, fetch_image) 
             owners.setdefault(mid, set()).add(r['id'])
     assigned, went = set(), {}
     for r in by_created:
-        if status_of(r) != 'Publish':
+        if not wants_publishing(r):
             continue
         f = r['fields']
         errs = problems(r, today)
@@ -397,7 +411,7 @@ def plan(records: list, feeds: dict, today: str, now: dt.datetime, fetch_image) 
         mid = message_id(r, heading, taken)
         assigned.add(mid)
         msg = {'id': mid, 'expires': one_line(f[F['expires']]), 'title': heading,
-               'link': one_line(f.get(F['link'])), 'button': one_line(f.get(F['button'])),
+               'link': normal_link(f.get(F['link'])), 'button': one_line(f.get(F['button'])),
                'body': clean(f[F['text']]).strip('\n'), 'image': ''}
         if img_bytes is not None:
             msg['image'] = '%s/%s.%s' % (IMAGES, mid, img_kind)
@@ -432,6 +446,8 @@ def plan(records: list, feeds: dict, today: str, now: dt.datetime, fetch_image) 
             note += ' "%s", published after it, took its place in %s.' % ('", "'.join(later), feeds_text(lost))
         if kept == [TEAM]:
             note += ' The team feed is read by testing-edition builds made after 3 Oct 2026.'
+        if status_of(next(r for r in records if r['id'] == rid)) == 'Published':
+            note += ' (It was marked Published by hand; set Publish next time.)'
         updates[rid] = {F['status']: 'Published', F['msgid']: msg['id'], F['again']: False,
                         F['published_at']: now.astimezone(dt.timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.000Z'),
                         F['note']: note + extra}
