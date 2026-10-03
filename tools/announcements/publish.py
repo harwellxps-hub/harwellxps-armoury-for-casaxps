@@ -5,19 +5,24 @@ Staff write messages in the Softr staff section (Airtable: base "HarwellXPS Armo
 table "Armoury Announcements").  This script, run by .github/workflows/announcements.yml, turns them into the
 files the HarwellXPS Armoury for CasaXPS reads once per launch:
 
-    announcements/feed.txt          the public feed (public and, until the next build, testing editions)
-    announcements/feed-testing.txt  the team feed (testing edition, from the build after 3 Oct 2026)
-    announcements/images/<id>.png   the picture beside the feed
+    announcements/feed.txt          the startup message, public feed (public and older testing builds)
+    announcements/feed-testing.txt  the startup message, team feed (testing builds from 3 Oct 2026)
+    announcements/news.txt          the News list: every announcement still on offer (public)
+    announcements/news-testing.txt  the News list for the team (Everyone + Team messages)
+    announcements/images/<id>.png   the pictures beside them
 
-and writes back to each record what happened (Status Published / Rejected / Withdrawn, the reason,
-the message id, when, and the commit).
+and writes back to each record what happened (Status Published / Rejected / Withdrawn / Pulled,
+the reason, the message id, when, and the commit).
 
 Status in Airtable          what this script does
   Draft                     nothing
-  Publish                   checks it; Everyone -> both feeds, Team -> feed-testing.txt only;
-                            Published, or Rejected with every reason; a later Publish replaces the
-                            message in that feed, and the replaced record becomes Withdrawn
-  Withdraw                  takes its message out of every feed that carries it -> Withdrawn
+  Publish                   checks it; Everyone -> both feeds and both News lists, Team -> the team
+                            feed and the team News list; Published, or Rejected with every reason; a
+                            later Publish replaces the message in that feed (the earlier one becomes
+                            Withdrawn and stays in News)
+  Withdraw                  takes its message out of the feeds (no more startup popup) -> Withdrawn;
+                            it stays in the News list, as expired and replaced messages do
+  Pull                      takes it out of the feeds and the News list -> Pulled
 
 The rules are the Armoury's own (1-armoury-for-casaxps/src/announcements.hpp; docs/ANNOUNCEMENTS.md):
 a message that breaks one is skipped silently by every copy, so it is refused here instead, with
@@ -64,6 +69,11 @@ F = {
 PUBLIC, TEAM = 'feed.txt', 'feed-testing.txt'
 FEEDS = (PUBLIC, TEAM)
 AUDIENCE = {'Everyone': (PUBLIC, TEAM), 'Team (testing edition)': (TEAM,)}
+NEWS_PUBLIC, NEWS_TEAM = 'news.txt', 'news-testing.txt'
+NEWS = (NEWS_PUBLIC, NEWS_TEAM)
+NEWS_AUDIENCE = {'Everyone': (NEWS_PUBLIC, NEWS_TEAM), 'Team (testing edition)': (NEWS_TEAM,)}
+NEWS_MAGIC, NEWS_SEP = 'HXPS-NEWS-1', 'HXPS-NEWS-ITEM'
+NEWS_LIMIT, NEWS_ITEMS = 1 << 20, 100
 FEED_LIMIT = 16384
 IMAGE_LIMIT = 1 << 20
 IMAGE_SIDE = 4096
@@ -190,6 +200,53 @@ def parse_feed(data: bytes, today: str = '') -> dict | None:
     return m
 
 
+def parse_news(data: bytes | None) -> list:
+    """Line-for-line port of news::parseNews: the readable items, newest first as written, each a
+    parse_feed() dict plus 'published' and 'item' (header values; '' when absent) and '_text' (its
+    bytes).  A bad item is skipped, not the list."""
+    if data is None or len(data) > NEWS_LIMIT or b'\0' in data:
+        return []
+    if data.startswith(b'\xef\xbb\xbf'):
+        data = data[3:]
+    lines = [l[:-1] if l.endswith(b'\r') else l for l in data.split(b'\n')]
+    if lines[0] != NEWS_MAGIC.encode():
+        return []
+    out, chunk = [], []
+
+    def finish():
+        if chunk and len(out) < NEWS_ITEMS:
+            text = b'\n'.join(chunk)
+            m = parse_feed(text, '')
+            if m is not None:
+                m['published'], m['item'] = '', ''
+                for l in chunk:
+                    if l.strip(b' \t') == b'':
+                        break
+                    if b':' not in l:
+                        continue
+                    k, v = l.split(b':', 1)
+                    k, v = k.strip(b' \t').lower(), v.strip(b' \t')
+                    if k == b'published':
+                        try:
+                            if valid_date(v.decode('ascii')):
+                                m['published'] = v.decode('ascii')
+                        except UnicodeDecodeError:
+                            pass
+                    elif k == b'item':
+                        m['item'] = v.decode('utf-8', 'replace')
+                m['_text'] = text
+                out.append(m)
+        chunk.clear()
+
+    for l in lines[1:]:
+        if l == NEWS_SEP.encode():
+            finish()
+        else:
+            chunk.append(l)
+    finish()
+    return out
+
+
 # ------------------------------------------------------------------ pictures
 def image_info(b: bytes):
     """(kind 'png'|'jpg', width, height) for a PNG or JPEG, else None."""
@@ -309,6 +366,8 @@ def problems(rec: dict, today: str) -> list:
     body_len = u16(text.replace('\n', '\r\n'))
     if not text.strip():
         out.append('Add the text.')
+    elif NEWS_SEP in text.split('\n'):
+        out.append('A line of the text cannot read %s (it separates the News list).' % NEWS_SEP)
     elif body_len > 4000:
         out.append('The text is %d characters (a line break counts as 2); the limit is 4,000.' % body_len)
     if not expires:
@@ -336,12 +395,29 @@ def render(msg: dict) -> bytes:
         head.append('link: ' + msg['link'])
         if msg.get('button'):
             head.append('button: ' + msg['button'])
-    return ('\n'.join(head) + '\n\n' + msg['body'] + '\n').encode('utf-8')
+    body = msg['body'].replace('\r\n', '\n')            # a message read back from a feed has \r\n
+    return ('\n'.join(head) + '\n\n' + body + '\n').encode('utf-8')
+
+
+def item_key(record_id: str) -> str:
+    """The News-list key of a record: stable across republishing and "Show again"."""
+    return hashlib.sha1(record_id.encode('utf-8')).hexdigest()[:10]
+
+
+def render_item(msg: dict, published: str, key: str) -> bytes:
+    """A News-list item: the feed message plus published and item header lines."""
+    head, body = render(msg).split(b'\n\n', 1)
+    return head + ('\npublished: %s\nitem: %s' % (published, key)).encode('utf-8') + b'\n\n' + body
+
+
+def render_news(texts: list) -> bytes:
+    return (NEWS_MAGIC + '\n').encode('utf-8') + (NEWS_SEP + '\n').encode('utf-8').join(t.rstrip(b'\r\n') + b'\n' for t in texts)
 
 
 def plan(records: list, feeds: dict, today: str, now: dt.datetime, fetch_image) -> dict:
-    """Decide everything; touch nothing.  `feeds` = {feed name: (parsed message or None, bytes or None)}
-    as they are in the repository; fetch_image(url) -> bytes (raises on failure).
+    """Decide everything; touch nothing.  `feeds` = {feed name: (parsed message or None, bytes or None),
+    news name: (parsed items or None, bytes or None)} as they are in the repository (news names may be
+    absent); fetch_image(url) -> bytes (raises on failure).
 
     Returns {'files': {path under announcements/: bytes, or None to delete}, 'keep_images': set,
     'updates': {record id: Airtable fields}, 'published': [record ids], 'needs_commit': set of record
@@ -350,24 +426,55 @@ def plan(records: list, feeds: dict, today: str, now: dt.datetime, fetch_image) 
     current = {n: (feeds.get(n) or (None, None))[0] for n in FEEDS}
     final = dict(current)                                  # feed name -> message after this run
     stamp = local_stamp(now)
+    # The News lists: name -> {key: entry}; entry = {'id', 'image', 'published', 'text', 'seq'}.
+    news = {n: {} for n in NEWS}
+    seq = [0]
+
+    def entry(m, text, published, order):
+        return {'id': m['id'], 'image': m.get('image') or '', 'published': published, 'text': text, 'seq': order}
+    for n in NEWS:
+        items = (feeds.get(n) or (None, None))[0] or []
+        for i, it in enumerate(items):
+            key = it.get('item') or 'id:' + it['id']
+            news[n].setdefault(key, entry(it, it['_text'], it.get('published', ''), len(items) - i))
+    seq[0] = max([e['seq'] for n in NEWS for e in news[n].values()] + [0])
+
     by_created = sorted(records, key=lambda r: (r['fields'].get(F['created']) or r.get('createdTime') or '', r['id']))
 
-    # 1. Withdraw: take the record's message out of every feed that carries it.
+    # 1. Withdraw: take the record's message out of every feed that carries it (it stays in News).
+    #    Pull: out of the feeds and the News lists.
     for r in by_created:
-        if status_of(r) != 'Withdraw':
+        st = status_of(r)
+        if st not in ('Withdraw', 'Pull'):
             continue
         f = r['fields']
         mid = one_line(f.get(F['msgid']))
         gone = [n for n in FEEDS if final[n] and mid and final[n]['id'] == mid]
         for n in gone:
             final[n] = None
-        updates[r['id']] = {F['status']: 'Withdrawn', F['note']: (
-            'Taken out of %s at %s. Copies of the Armoury that have not shown it yet will not show it.' % (feeds_text(gone), stamp)
-            if gone else 'It was not in a feed at %s, so there was nothing to take out.' % stamp)}
+        if st == 'Withdraw':
+            updates[r['id']] = {F['status']: 'Withdrawn', F['note']: (
+                'Taken out of %s at %s: no more startup popup. It stays in the News list; Pull removes it from there too.' % (feeds_text(gone), stamp)
+                if gone else 'It was not in a feed at %s, so there was nothing to take out. It stays in the News list, if it is there.' % stamp)}
+            log.append('withdraw %s (%s): %s' % (r['id'], mid or 'no message id', ', '.join(gone) or 'not in a feed'))
+            if gone:
+                summary.append('withdraw "%s"' % one_line(f.get(F['heading'])))
+        else:
+            key, listed = item_key(r['id']), []
+            for n in NEWS:
+                drop = [k for k, e in news[n].items() if k == key or (mid and e['id'] == mid)]
+                for k in drop:
+                    del news[n][k]
+                if drop:
+                    listed.append(n)
+            done = (['taken out of %s' % feeds_text(gone)] if gone else []) + (['removed from the News list'] if listed else [])
+            updates[r['id']] = {F['status']: 'Pulled', F['note']: (
+                '%s at %s.' % ((lambda t: t[:1].upper() + t[1:])(' and '.join(done)), stamp) if done
+                else 'It was not in a feed or the News list at %s, so there was nothing to remove.' % stamp)}
+            log.append('pull %s (%s): %s' % (r['id'], mid or 'no message id', '; '.join(done) or 'nothing to remove'))
+            if done:
+                summary.append('pull "%s"' % one_line(f.get(F['heading'])))
         needs_commit.add(r['id'])
-        log.append('withdraw %s (%s): %s' % (r['id'], mid or 'no message id', ', '.join(gone) or 'not in a feed'))
-        if gone:
-            summary.append('withdraw "%s"' % one_line(f.get(F['heading'])))
 
     # 2. Publish, oldest first: a later message replaces an earlier one in the same feed.
     owners = {}                                            # message id -> records that hold it
@@ -426,6 +533,9 @@ def plan(records: list, feeds: dict, today: str, now: dt.datetime, fetch_image) 
         targets = AUDIENCE[field_name(f[F['audience']])]
         for n in targets:
             final[n] = msg
+        for n in FEEDS:                                    # audience narrowed: out of the feed it left
+            if n not in targets and final[n] is not None and final[n]['id'] == mid:
+                final[n] = None
         went[r['id']] = (msg, targets, extra)
 
     # 2b. What actually went out: a later record in the same run may have taken a feed.
@@ -453,6 +563,19 @@ def plan(records: list, feeds: dict, today: str, now: dt.datetime, fetch_image) 
                         F['note']: note + extra}
         log.append('publish %s -> %s as %s' % (rid, ', '.join(kept), msg['id']))
         summary.append('publish "%s" (%s)' % (msg['title'], feeds_text(kept)))
+        # News: listed for its audience (and only there), first-published date kept for the same id.
+        key = item_key(rid)
+        lists = NEWS_AUDIENCE[field_name(next(r for r in records if r['id'] == rid)['fields'][F['audience']])]
+        for n in NEWS:
+            old = news[n].get(key)
+            for k in [k for k, e in news[n].items() if k != key and e['id'] == msg['id']]:
+                del news[n][k]                             # an entry for this id under another key
+            if n not in lists:
+                news[n].pop(key, None)
+                continue
+            pub = old['published'] if old and old['id'] == msg['id'] and old['published'] else today
+            seq[0] += 1
+            news[n][key] = entry(msg, render_item(msg, pub, key), pub, old['seq'] if old else seq[0])
 
     # 3. Earlier publications this run displaced.
     for r in records:
@@ -485,20 +608,57 @@ def plan(records: list, feeds: dict, today: str, now: dt.datetime, fetch_image) 
             files[m['image']] = m['_image']                # written only if its bytes differ
         if m is None or (feeds.get(n) or (None, None))[1] != m['_data']:
             files[n] = None if m is None else m['_data']
+    # 5. News: a message still in a feed that the list does not have yet (published before the News
+    #    list existed) joins it, under its record's key; then the lists are written newest first.
+    owners_of = {}
+    for r in records:
+        mid = one_line(r['fields'].get(F['msgid']))
+        if mid:
+            owners_of.setdefault(mid, []).append(r)
+    for fname, lists in ((PUBLIC, NEWS), (TEAM, (NEWS_TEAM,))):
+        m = final[fname]
+        if m is None:
+            continue
+        own = owners_of.get(m['id'], [])
+        key = item_key(own[0]['id']) if len(own) == 1 else 'id:' + m['id']
+        pub = (one_line(own[0]['fields'].get(F['published_at']))[:10] if len(own) == 1 else '') or today
+        for n in lists:
+            if not any(e['id'] == m['id'] for e in news[n].values()):
+                seq[0] += 1
+                news[n][key] = entry(m, render_item(m, pub, key), pub, seq[0])
+    for n in NEWS:
+        entries = sorted(news[n].values(), key=lambda e: (e['published'], e['seq']), reverse=True)[:NEWS_ITEMS]
+        data = render_news([e['text'] for e in entries])
+        while len(data) > NEWS_LIMIT and entries:
+            entries.pop()
+            data = render_news([e['text'] for e in entries])
+        back = parse_news(data)
+        if [b['id'] for b in back] != [e['id'] for e in entries]:
+            raise RuntimeError('%s would not read back as written; nothing published' % n)
+        for e in entries:
+            if e['image']:
+                keep.add(e['image'])
+        old = (feeds.get(n) or (None, None))[1]
+        if not entries:
+            if old is not None:
+                files[n] = None
+        elif data != old:
+            files[n] = data
     return {'files': files, 'keep_images': keep, 'updates': updates, 'published': published,
             'needs_commit': needs_commit, 'log': log, 'summary': summary}
 
 
 # ------------------------------------------------------------------ the repository
 def read_feeds() -> dict:
+    """The feeds and the News lists as they are in the repository."""
     out = {}
-    for n in FEEDS:
+    for n in FEEDS + NEWS:
         p = os.path.join(FOLDER, n)
         data = None
         if os.path.isfile(p):
             with open(p, 'rb') as fh:
                 data = fh.read()
-        out[n] = (parse_feed(data) if data is not None else None, data)
+        out[n] = ((parse_feed(data) if n in FEEDS else parse_news(data)) if data is not None else None, data)
     return out
 
 

@@ -55,12 +55,12 @@ def no_image(url):
 
 
 def feeds_from(p, before=None):
-    """The feeds after applying plan p to `before` ({name: (msg, bytes)})."""
-    out = dict(before or {n: (None, None) for n in P.FEEDS})
-    for n in P.FEEDS:
+    """The feeds and News lists after applying plan p to `before` ({name: (parsed, bytes)})."""
+    out = dict(before or {n: (None, None) for n in P.FEEDS + P.NEWS})
+    for n in P.FEEDS + P.NEWS:
         if n in p['files']:
             data = p['files'][n]
-            out[n] = (None, None) if data is None else (P.parse_feed(data), data)
+            out[n] = (None, None) if data is None else ((P.parse_feed if n in P.FEEDS else P.parse_news)(data), data)
     return out
 
 
@@ -74,7 +74,7 @@ def applied(records, p):
     return out
 
 
-EMPTY = {n: (None, None) for n in P.FEEDS}
+EMPTY = {n: (None, None) for n in P.FEEDS + P.NEWS}
 
 
 class Parser(unittest.TestCase):
@@ -143,7 +143,7 @@ class Publishing(unittest.TestCase):
         self.assertEqual(u[F['status']], 'Published')
         self.assertIs(u[F['again']], False)
         self.assertIn('both feeds', u[F['note']])
-        self.assertEqual(set(p['files']), {P.PUBLIC, P.TEAM, 'images/%s.png' % mid})
+        self.assertEqual(set(p['files']), {P.PUBLIC, P.TEAM, P.NEWS_PUBLIC, P.NEWS_TEAM, 'images/%s.png' % mid})
         self.assertEqual(p['files'][P.PUBLIC], p['files'][P.TEAM])
         m = P.parse_feed(p['files'][P.PUBLIC], TODAY)
         self.assertEqual((m['title'], m['image'], m['button'], m['expires']),
@@ -154,7 +154,7 @@ class Publishing(unittest.TestCase):
 
     def test_team_only(self):
         p = self.run_plan([rec('recA', audience='Team (testing edition)')])
-        self.assertEqual(set(p['files']), {P.TEAM})
+        self.assertEqual(set(p['files']), {P.TEAM, P.NEWS_TEAM})
         self.assertIn('team feed is read by testing-edition builds', p['updates']['recA'][F['note']])
 
     def test_link_without_button_gets_the_default(self):
@@ -199,7 +199,7 @@ class Publishing(unittest.TestCase):
         self.assertEqual(u[F['status']], 'Published')
         self.assertTrue(u[F['msgid']])
         self.assertIn('marked Published by hand', u[F['note']])
-        self.assertEqual(set(p['files']), {P.TEAM})
+        self.assertEqual(set(p['files']), {P.TEAM, P.NEWS_TEAM})
         # one the publisher did publish is left alone
         p2 = self.run_plan([rec('recA', status='Published', msgid='x-1')])
         self.assertEqual((p2['files'], p2['updates']), ({}, {}))
@@ -275,9 +275,10 @@ class Publishing(unittest.TestCase):
         records[0]['fields'][F['status']] = 'Withdraw'
         p2 = self.run_plan(records, feeds)
         self.assertEqual(p2['files'], {P.PUBLIC: None, P.TEAM: None})
-        self.assertEqual(p2['keep_images'], set())
+        self.assertEqual(p2['keep_images'], {'images/%s.png' % mid}, 'still in News, so its picture stays')
         self.assertEqual(p2['updates']['recA'][F['status']], 'Withdrawn')
         self.assertIn('Taken out of both feeds', p2['updates']['recA'][F['note']])
+        self.assertIn('stays in the News list', p2['updates']['recA'][F['note']])
         self.assertTrue(mid)
         p3 = self.run_plan([rec('recZ', status='Withdraw')])
         self.assertIn('nothing to take out', p3['updates']['recZ'][F['note']])
@@ -290,7 +291,7 @@ class Publishing(unittest.TestCase):
         # a team message takes the team feed only; A stays Published, with a note
         b = rec('recB', created='2026-10-03T09:00:00.000Z', heading='Team test', audience='Team (testing edition)')
         p2 = self.run_plan(records + [b], feeds)
-        self.assertEqual(set(p2['files']), {P.TEAM})
+        self.assertEqual(set(p2['files']), {P.TEAM, P.NEWS_TEAM})
         self.assertNotIn(F['status'], p2['updates']['recA'])
         self.assertIn('Still in the public feed; replaced by "Team test" in the team feed', p2['updates']['recA'][F['note']])
         records, feeds = applied(records + [b], p2), feeds_from(p2, feeds)
@@ -326,6 +327,120 @@ class Publishing(unittest.TestCase):
     def test_drafts_and_rejected_are_left_alone(self):
         p = self.run_plan([rec('recA', status='Draft'), rec('recB', status='Rejected'), rec('recC', status=None)])
         self.assertEqual((p['files'], p['updates']), ({}, {}))
+
+
+class News(unittest.TestCase):
+    """The News lists: every announcement on offer, newest first; Withdraw keeps, Pull removes."""
+    def run_plan(self, records, feeds=EMPTY, fetch=no_image, now=NOW, today=TODAY):
+        return P.plan(records, feeds, today, now, fetch)
+
+    def step(self, records, feeds, **kw):
+        p = self.run_plan(records, feeds, **kw)
+        return p, applied(records, p), feeds_from(p, feeds)
+
+    def items(self, feeds, name):
+        return P.parse_news((feeds.get(name) or (None, None))[1])
+
+    def test_publish_lists_by_audience(self):
+        p, recs, feeds = self.step([rec('recA', image=att()), rec('recB', created='2026-10-03T09:00:00.000Z', heading='Team only',
+                                                                     audience='Team (testing edition)')], EMPTY, fetch=lambda u: png())
+        pub, team = self.items(feeds, P.NEWS_PUBLIC), self.items(feeds, P.NEWS_TEAM)
+        self.assertEqual([i['title'] for i in pub], ['Summer School 2027'])
+        self.assertEqual([i['title'] for i in team], ['Team only', 'Summer School 2027'], 'newest first')
+        self.assertEqual((pub[0]['published'], pub[0]['item']), (TODAY, P.item_key('recA')))
+        self.assertEqual(pub[0]['image'], 'images/%s.png' % recs[0]['fields'][F['msgid']])
+        self.assertIn(pub[0]['image'], p['keep_images'])
+        # nothing changes on a second run
+        p2, _, _ = self.step(recs, feeds)
+        self.assertEqual((p2['files'], p2['updates']), ({}, {}))
+
+    def test_republish_and_show_again(self):
+        _, recs, feeds = self.step([rec('recA', image=att())], EMPTY, fetch=lambda u: png())
+        old_id = recs[0]['fields'][F['msgid']]
+        recs[0]['fields'][F['status']] = 'Publish'
+        recs[0]['fields'][F['text']] = 'Corrected text.'
+        later = NOW + dt.timedelta(days=2)
+        p, recs, feeds = self.step(recs, feeds, now=later, today='2026-10-05', fetch=lambda u: png())
+        pub = self.items(feeds, P.NEWS_PUBLIC)
+        self.assertEqual(len(pub), 1)
+        self.assertEqual((pub[0]['id'], pub[0]['body'], pub[0]['published']), (old_id, 'Corrected text.', TODAY), 'edited in place, first date kept')
+        recs[0]['fields'][F['status']] = 'Publish'
+        recs[0]['fields'][F['again']] = True
+        p, recs, feeds = self.step(recs, feeds, now=later, today='2026-10-05', fetch=lambda u: png())
+        pub = self.items(feeds, P.NEWS_PUBLIC)
+        self.assertEqual([i['id'] for i in pub], [old_id + '-2'], 'shown again: one entry, the new id, today')
+        self.assertEqual(pub[0]['published'], '2026-10-05')
+        self.assertNotIn('images/%s.png' % old_id, p['keep_images'])
+
+    def test_audience_change_leaves_the_public_list(self):
+        _, recs, feeds = self.step([rec('recA')], EMPTY)
+        recs[0]['fields'][F['status']] = 'Publish'
+        recs[0]['fields'][F['audience']] = 'Team (testing edition)'
+        p, recs, feeds = self.step(recs, feeds)
+        self.assertEqual(self.items(feeds, P.NEWS_PUBLIC), [])
+        self.assertIsNone(p['files'][P.NEWS_PUBLIC], 'an empty list is deleted')
+        self.assertEqual(len(self.items(feeds, P.NEWS_TEAM)), 1)
+        self.assertIsNone(p['files'][P.PUBLIC], 'and out of the public feed')
+
+    def test_pull(self):
+        _, recs, feeds = self.step([rec('recA', image=att())], EMPTY, fetch=lambda u: png())
+        mid = recs[0]['fields'][F['msgid']]
+        recs[0]['fields'][F['status']] = 'Pull'
+        p, recs, feeds = self.step(recs, feeds)
+        self.assertEqual(p['updates']['recA'][F['status']], 'Pulled')
+        self.assertIn('Taken out of both feeds and removed from the News list', p['updates']['recA'][F['note']])
+        self.assertEqual({n: p['files'][n] for n in P.FEEDS + P.NEWS}, {n: None for n in P.FEEDS + P.NEWS})
+        self.assertNotIn('images/%s.png' % mid, p['keep_images'])
+        self.assertEqual(p['summary'], ['pull "Summer School 2027"'])
+        p2 = self.run_plan([rec('recZ', status='Pull')])
+        self.assertIn('nothing to remove', p2['updates']['recZ'][F['note']])
+
+    def test_pull_after_withdraw(self):
+        _, recs, feeds = self.step([rec('recA')], EMPTY)
+        recs[0]['fields'][F['status']] = 'Withdraw'
+        _, recs, feeds = self.step(recs, feeds)
+        self.assertEqual(len(self.items(feeds, P.NEWS_PUBLIC)), 1, 'withdrawn: still in News')
+        recs[0]['fields'][F['status']] = 'Pull'
+        p, recs, feeds = self.step(recs, feeds)
+        self.assertEqual(self.items(feeds, P.NEWS_PUBLIC), [])
+        self.assertEqual(p['updates']['recA'][F['note']].split(' at ')[0], 'Removed from the News list')
+
+    def test_replaced_and_expired_stay(self):
+        _, recs, feeds = self.step([rec('recA', expires='2026-10-04')], EMPTY)
+        b = rec('recB', created='2026-10-03T09:00:00.000Z', heading='Newer')
+        p, recs, feeds = self.step(recs + [b], feeds)
+        self.assertEqual(recs[0]['fields'][F['status']], 'Withdrawn')
+        self.assertEqual([i['title'] for i in self.items(feeds, P.NEWS_PUBLIC)], ['Newer', 'Summer School 2027'])
+        later = NOW + dt.timedelta(days=5)
+        p2, _, _ = self.step(recs, feeds, now=later, today='2026-10-08')
+        self.assertEqual(p2['files'], {}, 'expiry changes nothing; the Armoury labels it')
+
+    def test_backfill_from_the_feed(self):
+        # a message published before the News list existed: in the feed, not in News
+        p1 = self.run_plan([rec('recA')])
+        recs = applied([rec('recA')], p1)
+        recs[0]['fields'][F['published_at']] = '2026-10-01T10:00:00.000Z'
+        feeds = {n: v for n, v in feeds_from(p1).items() if n in P.FEEDS}
+        p2 = self.run_plan(recs, feeds)
+        items = P.parse_news(p2['files'][P.NEWS_PUBLIC])
+        self.assertEqual([(i['id'], i['published'], i['item']) for i in items],
+                         [(recs[0]['fields'][F['msgid']], '2026-10-01', P.item_key('recA'))])
+        self.assertNotIn(b'\r', p2['files'][P.NEWS_PUBLIC], 'line endings stay LF')
+
+    def test_limits(self):
+        recs, feeds = [], EMPTY
+        for i in range(3):                                 # one per run, as staff would
+            recs = [dict(r, fields=dict(r['fields'])) for r in recs] + [rec('rec%03d' % i, created='2026-10-03T08:%02d:00.000Z' % i,
+                                                                            heading='Item %d' % i, audience='Team (testing edition)' if i % 2 else 'Everyone')]
+            _, recs, feeds = self.step(recs, feeds)
+        self.assertEqual([i['title'] for i in self.items(feeds, P.NEWS_TEAM)], ['Item 2', 'Item 1', 'Item 0'])
+        self.assertEqual([i['title'] for i in self.items(feeds, P.NEWS_PUBLIC)], ['Item 2', 'Item 0'])
+        # 100 at most: build a list of 120 directly
+        texts = [P.render_item({'id': 'n%d' % i, 'expires': '2027-01-01', 'title': 'T%d' % i, 'body': 'B'}, '2026-01-01', 'k%d' % i) for i in range(120)]
+        data = P.render_news(texts)
+        self.assertEqual(len(P.parse_news(data)), P.NEWS_ITEMS)
+        self.assertEqual(P.problems(rec('r', text='Before\nHXPS-NEWS-ITEM\nAfter'), TODAY),
+                         ['A line of the text cannot read HXPS-NEWS-ITEM (it separates the News list).'])
 
 
 class Pictures(unittest.TestCase):
@@ -397,7 +512,8 @@ class Repository(unittest.TestCase):
         log = run('git', '--git-dir', remote, 'log', '--format=%an|%s', '-1', 'main')
         self.assertEqual(log, 'HarwellXPS announcements|Announcements: publish "Summer School 2027" (both feeds)')
         files = run('git', '--git-dir', remote, 'ls-tree', '-r', '--name-only', 'main', 'announcements')
-        self.assertEqual(files.split('\n'), ['announcements/README.md', 'announcements/feed-testing.txt', 'announcements/feed.txt'])
+        self.assertEqual(files.split('\n'), ['announcements/README.md', 'announcements/feed-testing.txt', 'announcements/feed.txt',
+                                              'announcements/news-testing.txt', 'announcements/news.txt'])
 
 
 if __name__ == '__main__':

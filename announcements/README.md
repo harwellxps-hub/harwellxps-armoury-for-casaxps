@@ -1,23 +1,25 @@
-# Announcements feed
+# Announcements
 
-The HarwellXPS Armoury for CasaXPS reads one file in this folder once per launch:
+The HarwellXPS Armoury for CasaXPS reads one file in this folder once per launch, for its startup
+message, and a News list when someone opens News:
 
-| Edition | Feed |
-|---|---|
-| public | `https://raw.githubusercontent.com/harwellxps-hub/harwellxps-armoury-for-casaxps/main/announcements/feed.txt` |
-| testing | `…/announcements/feed-testing.txt` (builds from 3 Oct 2026; earlier ones read `feed.txt`) |
+| Edition | Startup message | News |
+|---|---|---|
+| public | `feed.txt` | `news.txt` |
+| testing | `feed-testing.txt` (builds from 3 Oct 2026; earlier ones read `feed.txt`) | `news-testing.txt` |
 
-A missing feed is silently ignored. Each message id is shown once per installation; users can turn
-announcements off with the tick box in the window.
+All under `https://raw.githubusercontent.com/harwellxps-hub/harwellxps-armoury-for-casaxps/main/announcements/`.
+A missing file is silently ignored. Each message id pops up once per installation; News keeps
+every announcement still on offer, expired ones included.
 
 ## Do not edit these files by hand
 
 HarwellXPS staff write messages on the Softr staff page (Airtable: HarwellXPS Database, table
 *Armoury Announcements*). [`.github/workflows/announcements.yml`](../.github/workflows/announcements.yml)
 runs [`tools/announcements/publish.py`](../tools/announcements/publish.py) every 15 minutes: it checks
-each message against the Armoury's rules, writes `feed.txt` / `feed-testing.txt` and the picture in
+each message against the Armoury's rules, writes the feeds, the News lists and the pictures in
 `images/`, commits as *HarwellXPS announcements*, and reports back to the Airtable record. A hand
-edit is overwritten by the next publication, and pictures that neither feed uses are deleted.
+edit is overwritten by the next publication, and pictures nothing refers to are deleted.
 
 ## The format (for reference)
 
@@ -46,8 +48,12 @@ Places are limited — register by 1 March.
 
 A bad value makes every copy ignore the whole message, which is why the publisher refuses it first.
 
-Preview a feed (nothing is fetched or written):
+The News lists are the same messages, newest first, after a first line `HXPS-NEWS-1` and separated
+by lines reading `HXPS-NEWS-ITEM`; each also carries `published: YYYY-MM-DD` and `item: <key>`.
+
+Preview (nothing is fetched or written):
 
 ```powershell
 HarwellXPS-Armoury.exe --preview-announcement "C:\Users\munke\HarwellXPS Armoury\public-repo\announcements\feed.txt"
+HarwellXPS-Armoury.exe --preview-news "C:\Users\munke\HarwellXPS Armoury\public-repo\announcements\news-testing.txt"
 ```
