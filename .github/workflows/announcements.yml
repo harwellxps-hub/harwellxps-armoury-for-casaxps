@@ -1,12 +1,12 @@
-# Publishes the Armoury's startup announcement from Airtable (HarwellXPS Database, "Armoury
+# Publishes the Armoury's startup announcement from Airtable (HarwellXPS Armoury Announcements, "Armoury
 # Announcements", edited on the Softr staff page) into announcements/.  See
 # tools/announcements/publish.py and announcements/README.md.
 #
 # Needs, in this repository's settings:
 #   secret   AIRTABLE_TOKEN  personal access token: data.records:read + data.records:write on the
-#                            HarwellXPS Database base only
-#   variable AIRTABLE_BASE   appVmZxYSFzP0IAmg
-#   variable AIRTABLE_TABLE  tbl8AmCp54MEK35a6
+#                            HarwellXPS Armoury Announcements base only
+#   variable AIRTABLE_BASE   appqTYLsSpCbIGQgi
+#   variable AIRTABLE_TABLE  tblAu9Oi2YIVY7ugs
 #   Actions > General > Workflow permissions: "Read and write permissions"
 name: Announcements
 
