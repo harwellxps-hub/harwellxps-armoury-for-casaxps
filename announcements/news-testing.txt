@@ -1,0 +1,12 @@
+HXPS-NEWS-1
+HXPS-ANNOUNCEMENT-2
+id: internal-testing-20261003-b01f8a
+expires: 2026-11-03
+title: Internal Testing
+image: images/internal-testing-20261003-b01f8a.png
+link: https://www.harwellxps.uk
+button: Go
+published: 2026-10-03
+item: b01f8af8ce
+
+Testing the softr portal armoury and github automated popup process.
