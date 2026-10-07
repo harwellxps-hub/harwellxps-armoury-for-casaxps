@@ -1,9 +1,9 @@
 HXPS-ANNOUNCEMENT-2
-id: internal-testing-20261003-b01f8a
-expires: 2026-11-03
-title: Internal Testing
-image: images/internal-testing-20261003-b01f8a.png
+id: announcements-page-20261007-b5065e
+expires: 2026-10-11
+title: Announcements page
+image: images/announcements-page-20261007-b5065e.png
 link: https://www.harwellxps.uk
-button: Go
+button: Button
 
-Testing the softr portal armoury and github automated popup process.
+Here we can set and schedule announcements that will appear as a popup every time users open the software! We can set a picture, text, link button to follow. Great for advertising.

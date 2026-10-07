@@ -1,5 +1,17 @@
 HXPS-NEWS-1
 HXPS-ANNOUNCEMENT-2
+id: announcements-page-20261007-b5065e
+expires: 2026-10-11
+title: Announcements page
+image: images/announcements-page-20261007-b5065e.png
+link: https://www.harwellxps.uk
+button: Button
+published: 2026-10-07
+item: b5065e354d
+
+Here we can set and schedule announcements that will appear as a popup every time users open the software! We can set a picture, text, link button to follow. Great for advertising.
+HXPS-NEWS-ITEM
+HXPS-ANNOUNCEMENT-2
 id: internal-testing-20261003-b01f8a
 expires: 2026-11-03
 title: Internal Testing
