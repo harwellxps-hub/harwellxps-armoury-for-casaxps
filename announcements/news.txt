@@ -16,27 +16,3 @@ In the launch edition, access is granted to a new data importer  and file manage
 We also present a lineshape optimiser, to help you get the exact fitting parameters to describe asymmetry in peaks - and a data plotter. Get paper quality plots from your data and export to excel in a super easy manner.
 
 Huge thanks to Dr. Neal Fairley for his kind support throughout, and of course to the HarwellXPS team Prof. Palgrave, Prof. Phil Davies, Dr. David Morgan, and Dr. Arthur Graf for testing and support throughout.
-HXPS-NEWS-ITEM
-HXPS-ANNOUNCEMENT-2
-id: announcements-page-20261007-b5065e
-expires: 2026-10-11
-title: Announcements page
-image: images/announcements-page-20261007-b5065e.png
-link: https://www.harwellxps.uk
-button: Button
-published: 2026-10-07
-item: b5065e354d
-
-Here we can set and schedule announcements that will appear as a popup every time users open the software! We can set a picture, text, link button to follow. Great for advertising.
-HXPS-NEWS-ITEM
-HXPS-ANNOUNCEMENT-2
-id: internal-testing-20261003-b01f8a
-expires: 2026-11-03
-title: Internal Testing
-image: images/internal-testing-20261003-b01f8a.png
-link: https://www.harwellxps.uk
-button: Go
-published: 2026-10-03
-item: b01f8af8ce
-
-Testing the softr portal armoury and github automated popup process.
